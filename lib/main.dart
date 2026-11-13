@@ -13,6 +13,8 @@ void main() {
           backgroundColor: Color(0xFF0F6E73),
           foregroundColor: Colors.white,
           elevation: 0,
+          scrolledUnderElevation: 0,
+          surfaceTintColor: Colors.transparent,
           titleTextStyle: TextStyle(
             color: Colors.white,
             fontSize: 20,
@@ -21,9 +23,9 @@ void main() {
         ),
         inputDecorationTheme: InputDecorationTheme(
           isDense: true,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
+          fillColor: const Color(0xFFF8FAFA),
+          filled: true,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         ),
       ),
       home: const CartScreen(),
@@ -60,6 +62,11 @@ class _CartScreenState extends State<CartScreen> {
   static const int _maxQuantity = 99;
 
   final List<CartItem> _items = [];
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _priceController = TextEditingController();
+
+  String? _nameError;
+  String? _priceError;
 
   @override
   void initState() {
@@ -70,6 +77,14 @@ class _CartScreenState extends State<CartScreen> {
       CartItem(name: 'Eggs', price: 8.00, quantity: 12, gotIt: true),
       CartItem(name: 'Milk', price: 95.00, quantity: 1),
     ]);
+  }
+
+  @override
+  void dispose() {
+    // Controllers hold native resources, so they must be released.
+    _nameController.dispose();
+    _priceController.dispose();
+    super.dispose();
   }
 
   /// The parent owns the data, so every change happens inside setState().
@@ -93,6 +108,64 @@ class _CartScreenState extends State<CartScreen> {
     setState(() {
       _items[index].gotIt = !_items[index].gotIt;
     });
+  }
+
+  void _addItem() {
+    final String name = _nameController.text.trim();
+    final double? parsedPrice = double.tryParse(_priceController.text.trim());
+    final bool isValidPrice = parsedPrice != null && parsedPrice > 0;
+
+    // Validate first; show the messages without touching the cart.
+    if (name.isEmpty || !isValidPrice) {
+      setState(() {
+        _nameError = name.isEmpty ? 'Enter an item name' : null;
+        _priceError = isValidPrice ? null : 'Enter a price greater than 0';
+      });
+      return;
+    }
+
+    final double price = parsedPrice;
+    setState(() {
+      _items.add(CartItem(name: name, price: price));
+      _nameError = null;
+      _priceError = null;
+    });
+
+    // Clearing the controllers only affects the text fields, not the cart.
+    _nameController.clear();
+    _priceController.clear();
+    FocusScope.of(context).unfocus();
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text('"$name" added to the cart.')));
+  }
+
+  void _clearChecked() {
+    final int checkedCount = _gotItCount;
+
+    if (checkedCount == 0) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(content: Text('No items are marked as got it.')),
+        );
+      return;
+    }
+
+    setState(() {
+      _items.removeWhere((item) => item.gotIt);
+    });
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            'Cleared $checkedCount checked ${checkedCount == 1 ? 'item' : 'items'}.',
+          ),
+        ),
+      );
   }
 
   /// Sum of price x quantity for every item in the cart.
@@ -129,7 +202,7 @@ class _CartScreenState extends State<CartScreen> {
                     ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
               child: Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
@@ -149,12 +222,102 @@ class _CartScreenState extends State<CartScreen> {
                         ),
                       ),
                     ),
-                    Text(
-                      'Total: PHP ${_total.toStringAsFixed(2)}',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        color: colors.onSecondaryContainer,
-                        fontWeight: FontWeight.bold,
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        'Total: PHP ${_total.toStringAsFixed(2)}',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          color: colors.onSecondaryContainer,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: colors.surface,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: colors.outlineVariant),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: TextField(
+                            controller: _nameController,
+                            textCapitalization: TextCapitalization.words,
+                            textInputAction: TextInputAction.next,
+                            decoration: InputDecoration(
+                              labelText: 'Item name',
+                              hintText: 'e.g. Bread',
+                              errorText: _nameError,
+                            ),
+                            onChanged: (_) {
+                              if (_nameError != null) {
+                                setState(() => _nameError = null);
+                              }
+                            },
+                            onSubmitted: (_) =>
+                                FocusScope.of(context).nextFocus(),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 2,
+                          child: TextField(
+                            controller: _priceController,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            textInputAction: TextInputAction.done,
+                            decoration: InputDecoration(
+                              labelText: 'Price',
+                              hintText: '0.00',
+                              prefixText: 'PHP ',
+                              errorText: _priceError,
+                            ),
+                            onChanged: (_) {
+                              if (_priceError != null) {
+                                setState(() => _priceError = null);
+                              }
+                            },
+                            onSubmitted: (_) => _addItem(),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          flex: 2,
+                          child: FilledButton.icon(
+                            onPressed: _addItem,
+                            icon: const Icon(Icons.add_shopping_cart),
+                            label: const Text('Add'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 3,
+                          child: OutlinedButton.icon(
+                            onPressed: _clearChecked,
+                            icon: const Icon(Icons.delete_sweep_outlined),
+                            label: const Text('Clear checked'),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
